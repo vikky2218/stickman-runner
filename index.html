@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>火柴人跑酷 - Stickman Runner</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1a2e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    overflow: hidden;
+  }
+
+  #game-container {
+    position: relative;
+    width: 600px;
+    height: 800px;
+    border: 3px solid #e94560;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(233, 69, 96, 0.3);
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(180deg, #0f3460 0%, #16213e 40%, #1a1a2e 100%);
+  }
+
+  #ui-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+
+  .ui-box {
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 10px;
+    padding: 10px 16px;
+    color: #fff;
+    backdrop-filter: blur(4px);
+  }
+
+  .ui-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #e94560;
+    margin-bottom: 2px;
+  }
+
+  .ui-value {
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  #timer .ui-value { color: #f5c518; }
+  #timer.warning .ui-value { color: #ff6b6b; animation: pulse 0.5s ease-in-out infinite alternate; }
+  @keyframes pulse { to { opacity: 0.4; } }
+
+  .screen-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+    pointer-events: all;
+  }
+
+  .screen-overlay.hidden { display: none; }
+
+  .screen-overlay h1 {
+    font-size: 48px;
+    font-weight: 900;
+    color: #fff;
+    margin-bottom: 8px;
+    text-shadow: 0 0 20px rgba(233, 69, 96, 0.6);
+  }
+
+  .screen-overlay .subtitle {
+    font-size: 16px;
+    color: #aaa;
+    margin-bottom: 32px;
+  }
+
+  .screen-overlay .btn {
+    padding: 14px 48px;
+    font-size: 18px;
+    font-weight: 700;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #e94560, #c23152);
+    color: #fff;
+    letter-spacing: 1px;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 6px 20px rgba(233, 69, 96, 0.4);
+  }
+
+  .screen-overlay .btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 30px rgba(233, 69, 96, 0.6);
+  }
+
+  .screen-overlay .btn:active { transform: scale(0.97); }
+
+  #gameover-screen h1 { color: #ff6b6b; }
+  #final-score { font-size: 64px; font-weight: 900; color: #f5c518; }
+  #final-score-label { font-size: 14px; color: #aaa; margin-bottom: 4px; }
+
+  #hint {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.5);
+    font-size: 13px;
+    pointer-events: none;
+  }
+
+  .mobile-controls {
+    position: absolute;
+    bottom: 24px;
+    left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 60px;
+    pointer-events: all;
+  }
+  .ctrl-btn {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.7);
+    font-size: 28px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .ctrl-btn:active { background: rgba(255,255,255,0.3); }
+
+  @media (max-width: 620px) {
+    #game-container { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+    canvas { width: 100%; height: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="ui-overlay">
+    <div class="ui-box" id="score-box">
+      <div class="ui-label">🛡️ 躲过</div>
+      <div class="ui-value" id="score-value">0</div>
+    </div>
+    <div class="ui-box" id="timer">
+      <div class="ui-label">⏱️ 剩余</div>
+      <div class="ui-value" id="timer-value">60s</div>
+    </div>
+  </div>
+
+  <!-- 开始画面 -->
+  <div id="start-screen" class="screen-overlay">
+    <h1>🏃 火柴人跑酷</h1>
+    <p class="subtitle">左右键 / AD 移动 · 躲避障碍物 · 坚持60秒！</p>
+    <button class="btn" id="start-btn">开 始 游 戏</button>
+  </div>
+
+  <!-- 结束画面 -->
+  <div id="gameover-screen" class="screen-overlay hidden">
+    <h1>💥 游戏结束</h1>
+    <p id="final-score-label">你躲过了</p>
+    <p id="final-score">0</p>
+    <p style="color:#aaa;margin-bottom:28px;">个障碍物</p>
+    <button class="btn" id="restart-btn">再 来 一 次</button>
+  </div>
+
+  <!-- 手机虚拟按键 -->
+  <div class="mobile-controls" id="mobile-ctrls" style="display:none;">
+    <button class="ctrl-btn" id="btn-left">◀</button>
+    <button class="ctrl-btn" id="btn-right">▶</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  const CONTAINER_W = 600;
+  const CONTAINER_H = 800;
+  const LANES = 5;              // 5条跑道
+  const LANE_WIDTH = CONTAINER_W / LANES;
+  const STICKMAN_X_OFFSET = LANE_WIDTH / 2;  // 跑道中心偏移
+  const GAME_DURATION = 60;     // 60秒
+  const BASE_SPEED = 4;         // 障碍物基础速度
+  const MAX_SPEED = 9;          // 障碍物最大速度
+  const SPAWN_INTERVAL_INIT = 800;  // 初始生成间隔ms
+  const SPAWN_INTERVAL_MIN = 350;   // 最小生成间隔ms
+
+  // 状态
+  let gameState = 'start';      // start | playing | over
+  let currentLane = 2;          // 0-4, 中间起跑
+  let targetLane = 2;
+  let score = 0;
+  let timeLeft = GAME_DURATION;
+  let obstacles = [];
+  let particles = [];
+  let roadOffset = 0;
+  let spawnTimer = 0;
+  let lastTime = 0;
+  let shakeAmount = 0;
+  let comboTexts = [];
+
+  // 按键状态
+  const keys = { left: false, right: false };
+  let keyCooldown = 0;
+
+  // ---- UI 元素 ----
+  const startScreen = document.getElementById('start-screen');
+  const gameoverScreen = document.getElementById('gameover-screen');
+  const scoreValueEl = document.getElementById('score-value');
+  const timerValueEl = document.getElementById('timer-value');
+  const timerEl = document.getElementById('timer');
+  const finalScoreEl = document.getElementById('final-score');
+  const startBtn = document.getElementById('start-btn');
+  const restartBtn = document.getElementById('restart-btn');
+  const mobileCtrls = document.getElementById('mobile-ctrls');
+
+  // ---- Canvas Resize ----
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = CONTAINER_W;
+    const h = CONTAINER_H;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // 检测移动端
+  const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent) ||
+                   ('ontouchstart' in window && window.innerWidth < 768);
+  if (isMobile) {
+    mobileCtrls.style.display = 'flex';
+  }
+
+  // ---- 输入 ----
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if (e.key === ' ' || e.key === 'Enter') {
+      if (gameState === 'start') startGame();
+      else if (gameState === 'over') restartGame();
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+  });
+
+  // 移动端虚拟按键
+  const btnLeft = document.getElementById('btn-left');
+  const btnRight = document.getElementById('btn-right');
+
+  btnLeft.addEventListener('pointerdown', e => { e.preventDefault(); keys.left = true; });
+  btnLeft.addEventListener('pointerup', e => { e.preventDefault(); keys.left = false; });
+  btnLeft.addEventListener('pointerleave', e => { keys.left = false; });
+  btnRight.addEventListener('pointerdown', e => { e.preventDefault(); keys.right = true; });
+  btnRight.addEventListener('pointerup', e => { e.preventDefault(); keys.right = false; });
+  btnRight.addEventListener('pointerleave', e => { keys.right = false; });
+
+  // 触屏滑动
+  let touchStartX = 0;
+  canvas.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+  });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const dx = e.touches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 20) {
+      if (dx > 0) { keys.right = true; keys.left = false; }
+      else { keys.left = true; keys.right = false; }
+      touchStartX = e.touches[0].clientX;
+    }
+  });
+  canvas.addEventListener('touchend', () => {
+    keys.left = false;
+    keys.right = false;
+  });
+
+  // ---- 按钮 ----
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', restartGame);
+
+  // ---- 游戏逻辑 ----
+  function startGame() {
+    gameState = 'playing';
+    currentLane = 2;
+    targetLane = 2;
+    score = 0;
+    timeLeft = GAME_DURATION;
+    obstacles = [];
+    particles = [];
+    comboTexts = [];
+    spawnTimer = 0;
+    roadOffset = 0;
+    shakeAmount = 0;
+    keys.left = false;
+    keys.right = false;
+    keyCooldown = 0;
+    lastTime = performance.now();
+
+    startScreen.classList.add('hidden');
+    gameoverScreen.classList.add('hidden');
+    scoreValueEl.textContent = '0';
+    timerValueEl.textContent = '60s';
+    timerEl.classList.remove('warning');
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  function restartGame() {
+    startGame();
+  }
+
+  function gameOver() {
+    gameState = 'over';
+    shakeAmount = 20;
+    finalScoreEl.textContent = score;
+    gameoverScreen.classList.remove('hidden');
+    timerEl.classList.remove('warning');
+
+    // 爆炸粒子
+    const cx = currentLane * LANE_WIDTH + STICKMAN_X_OFFSET;
+    const cy = CONTAINER_H - 100;
+    for (let i = 0; i < 40; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 6;
+      particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: 0.01 + Math.random() * 0.03,
+        color: ['#e94560', '#f5c518', '#fff', '#ff6b6b'][Math.floor(Math.random() * 4)]
+      });
+    }
+  }
+
+  function spawnObstacle() {
+    const types = ['rock', 'rock', 'rock', 'train', 'barrier', 'barrier', 'spike', 'spike'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    const lane = Math.floor(Math.random() * LANES);
+
+    // 避免在同一个位置连续生成
+    const recentLanes = obstacles.filter(o => o.y < 150).map(o => o.lane);
+    let chosenLane = lane;
+    if (recentLanes.length > 0 && recentLanes.includes(lane) && Math.random() < 0.6) {
+      // 换一个跑道
+      const available = [];
+      for (let i = 0; i < LANES; i++) { if (!recentLanes.includes(i)) available.push(i); }
+      if (available.length > 0) chosenLane = available[Math.floor(Math.random() * available.length)];
+    }
+
+    obstacles.push({
+      type,
+      lane: chosenLane,
+      y: -60,
+      width: LANE_WIDTH - 16,
+      height: type === 'train' ? 90 : type === 'barrier' ? 40 : type === 'spike' ? 36 : 50,
+      passed: false
+    });
+  }
+
+  function update(dt) {
+    if (gameState !== 'playing') return;
+
+    // 时间更新
+    timeLeft -= dt;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      gameOver();
+      return;
+    }
+
+    // 速度随剩余时间递减（越到后面越快）
+    const progress = 1 - (timeLeft / GAME_DURATION);
+    const currentSpeed = BASE_SPEED + (MAX_SPEED - BASE_SPEED) * progress;
+
+    // 生成间隔随难度递减
+    const currentSpawnInterval = SPAWN_INTERVAL_INIT - (SPAWN_INTERVAL_INIT - SPAWN_INTERVAL_MIN) * progress;
+
+    spawnTimer += dt * 1000;
+    if (spawnTimer >= currentSpawnInterval) {
+      spawnTimer -= currentSpawnInterval;
+      spawnObstacle();
+      // 后期可能一下出两个
+      if (progress > 0.5 && Math.random() < progress * 0.4) {
+        spawnObstacle();
+      }
+    }
+
+    // 移动逻辑
+    keyCooldown = Math.max(0, keyCooldown - dt);
+    if (keyCooldown <= 0) {
+      if (keys.left && currentLane > 0) {
+        currentLane--;
+        keyCooldown = 0.12;
+      }
+      if (keys.right && currentLane < LANES - 1) {
+        currentLane++;
+        keyCooldown = 0.12;
+      }
+    }
+
+    // 更新障碍物位置
+    for (let obs of obstacles) {
+      obs.y += currentSpeed;
+    }
+
+    // 碰撞检测
+    const stickmanCX = currentLane * LANE_WIDTH + STICKMAN_X_OFFSET;
+    const stickmanCY = CONTAINER_H - 95;
+    const stickmanR = 22; // 碰撞半径
+
+    for (let obs of obstacles) {
+      if (obs.passed) continue;
+      const obsCX = obs.lane * LANE_WIDTH + STICKMAN_X_OFFSET;
+      const obsCY = obs.y + obs.height / 2;
+      const obsRW = obs.width / 2 - 4;
+      const obsRH = obs.height / 2 - 4;
+
+      // AABB + 圆形碰撞
+      const closestX = Math.max(obsCX - obsRW, Math.min(stickmanCX, obsCX + obsRW));
+      const closestY = Math.max(obsCY - obsRH, Math.min(stickmanCY, obsCY + obsRH));
+      const dx = stickmanCX - closestX;
+      const dy = stickmanCY - closestY;
+
+      if (dx * dx + dy * dy < stickmanR * stickmanR) {
+        gameOver();
+        return;
+      }
+
+      // 计分：障碍物经过了火柴人
+      if (!obs.passed && obs.y > stickmanCY + 50) {
+        obs.passed = true;
+        score++;
+        scoreValueEl.textContent = score;
+
+        // 连击文字
+        comboTexts.push({
+          x: stickmanCX,
+          y: stickmanCY - 20,
+          text: score % 10 === 0 && score > 0 ? `🔥 x${score}` : '✓',
+          life: 1,
+          color: score % 10 === 0 ? '#f5c518' : '#4eff4e'
+        });
+      }
+    }
+
+    // 清理屏幕外的障碍物
+    obstacles = obstacles.filter(o => o.y < CONTAINER_H + 100);
+
+    // 道路动画偏移
+    roadOffset = (roadOffset + currentSpeed * 1.5) % 50;
+
+    // 更新粒子
+    for (let p of particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+    }
+    particles = particles.filter(p => p.life > 0);
+
+    // 更新combo文字
+    for (let c of comboTexts) {
+      c.y -= 1.5;
+      c.life -= 0.02;
+    }
+    comboTexts = comboTexts.filter(c => c.life > 0);
+
+    // 更新震动
+    if (shakeAmount > 0) shakeAmount *= 0.85;
+    if (shakeAmount < 0.1) shakeAmount = 0;
+
+    // 更新UI
+    const t = Math.ceil(timeLeft);
+    timerValueEl.textContent = t + 's';
+    if (t <= 10) timerEl.classList.add('warning');
+    else timerEl.classList.remove('warning');
+  }
+
+  // ---- 渲染 ----
+  function drawStickman(cx, cy, scale = 1) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = 'rgba(255,255,255,0.3)';
+    ctx.shadowBlur = 8;
+
+    // 头
+    ctx.beginPath();
+    ctx.arc(0, -28, 10, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 身体
+    ctx.beginPath();
+    ctx.moveTo(0, -18);
+    ctx.lineTo(0, 18);
+    ctx.stroke();
+
+    // 左臂
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(-14, 6);
+    ctx.stroke();
+
+    // 右臂
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(14, 6);
+    ctx.stroke();
+
+    // 左腿（跑步动画根据时间微调）
+    const legPhase = Date.now() / 120;
+    const leftLegX = Math.sin(legPhase) * 6;
+    const rightLegX = Math.sin(legPhase + Math.PI) * 6;
+
+    ctx.beginPath();
+    ctx.moveTo(0, 18);
+    ctx.lineTo(leftLegX - 6, 40);
+    ctx.stroke();
+
+    // 右腿
+    ctx.beginPath();
+    ctx.moveTo(0, 18);
+    ctx.lineTo(rightLegX + 6, 40);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  function drawObstacle(obs) {
+    const cx = obs.lane * LANE_WIDTH + STICKMAN_X_OFFSET;
+    const cy = obs.y;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    switch (obs.type) {
+      case 'rock':
+        // 石头
+        ctx.fillStyle = '#555';
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-obs.width/2 + 4, obs.height/2);
+        ctx.lineTo(-obs.width/2, 0);
+        ctx.lineTo(-obs.width/2 + 4, -obs.height/2);
+        ctx.lineTo(obs.width/2 - 4, -obs.height/2 + 6);
+        ctx.lineTo(obs.width/2, 4);
+        ctx.lineTo(obs.width/2 - 6, obs.height/2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // 纹理
+        ctx.fillStyle = '#666';
+        ctx.beginPath();
+        ctx.arc(-4, -2, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#777';
+        ctx.beginPath();
+        ctx.arc(6, 4, 3, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+
+      case 'train':
+        // 火车
+        ctx.fillStyle = '#c0392b';
+        ctx.fillRect(-obs.width/2, -obs.height/2, obs.width, obs.height);
+        // 车身条纹
+        ctx.fillStyle = '#e74c3c';
+        ctx.fillRect(-obs.width/2 + 4, -obs.height/2 + 8, obs.width - 8, obs.height - 16);
+        // 车窗
+        ctx.fillStyle = '#ffeaa7';
+        ctx.fillRect(-obs.width/2 + 10, -obs.height/2 + 14, 16, 20);
+        ctx.fillRect(obs.width/2 - 26, -obs.height/2 + 14, 16, 20);
+        // 烟囱
+        ctx.fillStyle = '#333';
+        ctx.fillRect(-8, -obs.height/2 - 14, 16, 16);
+        ctx.fillStyle = '#888';
+        // 烟雾
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.arc(-12 + Math.sin(Date.now()/300 + i) * 4, -obs.height/2 - 22 - i * 8, 5 - i, 0, Math.PI*2);
+          ctx.fill();
+        }
+        // 轮子
+        ctx.fillStyle = '#222';
+        ctx.beginPath();
+        ctx.arc(-obs.width/2 + 14, obs.height/2 + 6, 10, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(obs.width/2 - 14, obs.height/2 + 6, 10, 0, Math.PI*2);
+        ctx.fill();
+        break;
+
+      case 'barrier':
+        // 路障
+        ctx.fillStyle = '#f39c12';
+        ctx.strokeStyle = '#d68910';
+        ctx.lineWidth = 2;
+        // 三角形路障
+        ctx.beginPath();
+        ctx.moveTo(0, -obs.height/2);
+        ctx.lineTo(-obs.width/2, obs.height/2);
+        ctx.lineTo(obs.width/2, obs.height/2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // 条纹
+        for (let i = -2; i <= 2; i++) {
+          ctx.fillStyle = i % 2 === 0 ? '#222' : '#f39c12';
+          ctx.fillRect(i * (obs.width/6) - 4, -obs.height/6, 8, obs.height * 2/3);
+        }
+        break;
+
+      case 'spike':
+        // 尖刺
+        ctx.fillStyle = '#bdc3c7';
+        ctx.strokeStyle = '#7f8c8d';
+        ctx.lineWidth = 2;
+        for (let i = -2; i <= 2; i++) {
+          ctx.beginPath();
+          const sx = i * 12;
+          ctx.moveTo(sx, -obs.height/2);
+          ctx.lineTo(sx - 5, obs.height/2);
+          ctx.lineTo(sx + 5, obs.height/2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+        break;
+    }
+
+    ctx.restore();
+  }
+
+  function drawRoad() {
+    // 跑道分隔线
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([20, 20]);
+    ctx.lineDashOffset = -roadOffset;
+
+    for (let i = 1; i < LANES; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * LANE_WIDTH, 0);
+      ctx.lineTo(i * LANE_WIDTH, CONTAINER_H);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  function render() {
+    const W = CONTAINER_W;
+    const H = CONTAINER_H;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // 震动偏移
+    let sx = 0, sy = 0;
+    if (shakeAmount > 0) {
+      sx = (Math.random() - 0.5) * shakeAmount;
+      sy = (Math.random() - 0.5) * shakeAmount;
+    }
+    ctx.save();
+    ctx.translate(sx, sy);
+
+    // 远处的背景山脉
+    ctx.fillStyle = '#16213e';
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W; x += 40) {
+      ctx.lineTo(x, H * 0.55 + Math.sin(x * 0.008) * 60 + Math.sin(x * 0.02) * 30);
+    }
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    ctx.fill();
+
+    // 近处地面
+    const groundGrad = ctx.createLinearGradient(0, H * 0.55, 0, H);
+    groundGrad.addColorStop(0, '#2d3436');
+    groundGrad.addColorStop(1, '#1a1a2e');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0, H * 0.55, W, H * 0.45);
+
+    // 跑道
+    drawRoad();
+
+    // 地面横线（透视感）
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 2;
+    for (let y = H * 0.55; y < H; y += 35) {
+      const offsetY = (y + roadOffset * 2) % (H * 0.45) + H * 0.55;
+      const alpha = 1 - (offsetY - H * 0.55) / (H * 0.45);
+      ctx.globalAlpha = alpha * 0.4;
+      ctx.beginPath();
+      ctx.moveTo(0, offsetY);
+      ctx.lineTo(W, offsetY);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // 绘制障碍物
+    for (let obs of obstacles) {
+      drawObstacle(obs);
+    }
+
+    // 绘制火柴人
+    const sx2 = currentLane * LANE_WIDTH + STICKMAN_X_OFFSET;
+    const sy2 = CONTAINER_H - 100;
+    drawStickman(sx2, sy2, 1);
+
+    // 绘制combo文字
+    for (let c of comboTexts) {
+      ctx.globalAlpha = c.life;
+      ctx.fillStyle = c.color;
+      ctx.font = 'bold 20px "PingFang SC","Microsoft YaHei",sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(c.text, c.x, c.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // 绘制粒子
+    for (let p of particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  function gameLoop(now) {
+    if (!lastTime) lastTime = now;
+    let dt = (now - lastTime) / 1000;
+    if (dt > 0.1) dt = 0.1; // 防止掉帧跳跃
+    lastTime = now;
+
+    update(dt);
+    render();
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  // 启动时就开始渲染循环（显示开始画面背景）
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+
+  // 初始画面不显示障碍物，只显示背景和火柴人
+  // 让火柴人站在中间
+  currentLane = 2;
+})();
+</script>
+</body>
+</html>
